@@ -1,0 +1,10 @@
+version: '3.9'
+
+services:
+
+  frontend:
+    container_name: "pik_front"
+    build: ./front
+    volumes:
+      - ../:/app
+    command: sh -c "yarn install && yarn dev --host 0.0.0.0"
