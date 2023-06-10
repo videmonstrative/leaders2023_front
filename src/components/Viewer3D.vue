@@ -9,6 +9,7 @@ import {
   Curve,
   DoubleSide,
   Float32BufferAttribute,
+  CircleGeometry,
   Group,
   LineSegments,
   LineBasicMaterial,
@@ -28,38 +29,69 @@ import {
 
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import {onMounted} from 'vue'
+import {useStore} from "vuex";
+
+const group = new Group()
+const store = useStore()
+
+const unsubscribe = store.subscribe((mutation, state) => {
+  if (mutation.type === 'setWallPoint') {
+    wallsGeometry(group)
+  }
+  if (mutation.type === 'clearProject') {
+    wallsGeometry(group)
+    addRiser(group)
+  }
+  if (mutation.type === 'addRiser') {
+    addRiser(group)
+  }
+})
+
+function addRiser(group) {
+
+  store.state.activeProject.risers.forEach((riser) => {
+    const geometry = new CircleGeometry(1, 32)
+  //  geometry.translate(riser.x/9, 0, riser.y/-9)
+  //  geometry.rotateX(Math.PI / 4)
+    group.add(new Mesh(geometry, new MeshPhongMaterial({color: 0x00ff00})))
+  })
+}
+
+function wallsGeometry(mesh) {
+  const x = 0, y = 0;
+  const shape = new Shape()
+  if (store.state.activeProject) {
+    store.state.activeProject.wallsPoints.forEach((point, index) => {
+      if (index === 0) {
+        shape.moveTo(point.x/10, point.y/10)
+      } else {
+        shape.lineTo(point.x/10, point.y/10)
+      }
+    })
+  }
+  const data = {
+    segments: 4
+  }
+  const extrudeSettings = {
+    steps: 1,
+    depth: 50,
+    bevelEnabled: false,
+    curveSegments: 50,
+  };
+  const geometry = new ExtrudeBufferGeometry( shape, extrudeSettings );
+  geometry.center();
+
+  mesh.children[0].geometry.dispose();
+  mesh.children[1].geometry.dispose();
+  mesh.children[0].geometry = new WireframeGeometry(geometry);
+  mesh.children[1].geometry = geometry;
+}
 
 onMounted(() => {
   init()
-});
+})
 
 function init() {
-
-  function wallsGeometry(mesh) {
-    const x = 0, y = 0;
-    const shape = new Shape()
-    shape.moveTo(0, 0)
-    shape.lineTo(0, 10)
-    shape.lineTo(10, 10)
-    shape.lineTo(10, 0)
-    shape.lineTo(0, 0)
-    const data = {
-      segments: 4
-    }
-    const extrudeSettings = {
-      steps: 1,
-      depth: .2,
-      bevelEnabled: false,
-      curveSegments: 32,
-    };
-    const geometry = new ExtrudeBufferGeometry( shape, extrudeSettings );
-    geometry.center();
-
-    mesh.children[0].geometry.dispose();
-    mesh.children[1].geometry.dispose();
-    mesh.children[0].geometry = new WireframeGeometry(geometry);
-    mesh.children[1].geometry = geometry;
-  }
 
   const canvasContainer = document.getElementById('canvas-container')
   const winWidth = canvasContainer.parentElement.clientWidth
@@ -73,8 +105,8 @@ function init() {
   const gridHelper = new GridHelper(100, 100, 0xe5e5e5ff, 0xe5e5e5ff)
   scene.add(gridHelper)
 
- const camera = new PerspectiveCamera(75, winWidth/winHeight, 0.1, 500);
-//  const camera = new OrthographicCamera(winWidth/-2, winWidth/2, winHeight/2, winHeight/-2, 1, 100)
+ const camera = new PerspectiveCamera(75, winWidth/winHeight, 0.1, 600);
+ // const camera = new OrthographicCamera(winWidth/-2, winWidth/2, winHeight/2, winHeight/-2, 1, 100)
 
    camera.position.x = 10;
    camera.position.y = 10;
@@ -102,7 +134,7 @@ function init() {
   scene.add( lights[ 1 ] );
   scene.add( lights[ 2 ] );
 
-  const group = new Group();
+
 
   const geometry = new BufferGeometry();
   geometry.setAttribute( 'position', new Float32BufferAttribute( [], 3 ) );
@@ -110,10 +142,11 @@ function init() {
   const lineMaterial = new LineBasicMaterial( { color: 0xffffff, transparent: true, opacity: 0.5 } );
   const meshMaterial = new MeshPhongMaterial( { color: 0x156289, emissive: 0x072534, side: DoubleSide, flatShading: true } );
 
-  group.add( new LineSegments( geometry, lineMaterial ) );
-  group.add( new Mesh( geometry, meshMaterial ) );
+  group.add( new LineSegments( geometry, lineMaterial ) )
+  group.add( new Mesh( geometry, meshMaterial ) )
 
-  wallsGeometry(group)
+  group.rotateX(1.5708)
+  group.translateZ(-25)
 
   scene.add( group );
 

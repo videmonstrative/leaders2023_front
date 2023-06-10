@@ -2,11 +2,11 @@
 import Konva from 'konva'
 import {onMounted, reactive, ref} from 'vue'
 import axios from 'axios'
+import {useStore} from "vuex";
+
+const store = useStore()
 
 const dataRequest = reactive({
-  walls: [],
-  risers: [],
-  drops: {},
   center: null,
 })
 
@@ -52,24 +52,18 @@ function setTool(name) {
   activeTool.value = name
 }
 
+function cleanCanvas() {
+  dataRequest.center = null
+  linePoints= []
+  draggablePoints= []
+  layer.destroyChildren()
+  layer.clear()
+  store.dispatch('clearProject')
+  drawAnchorGrid()
+}
+
 onMounted(() => {
   init()
-
-  document.getElementById('btn-clear').addEventListener(
-      'click',
-      function () {
-        dataRequest.center = null
-        dataRequest.drops = {}
-        dataRequest.risers = []
-        linePoints= []
-        draggablePoints= []
-        layer.destroyChildren()
-        layer.clear()
-        drawAnchorGrid()
-      },
-      false
-  );
-
   document.getElementById('btn-wall').addEventListener('click', function () {setTool('wall')}, false);
   document.getElementById('btn-riser').addEventListener('click', function () {setTool('riser')}, false);
   document.getElementById('btn-drop').addEventListener('click', function () {setTool('drop')}, false);
@@ -166,7 +160,6 @@ function drawDrop(x, y) {
       // Ограничиваем перемещение точек только по горизонтали и вертикали
       const newX = Math.floor(pos.x / gridSize) * gridSize + gridSize / 2;
       const newY = Math.floor(pos.y / gridSize) * gridSize + gridSize / 2;
-      dataRequest.drops[this._id] = [newX, newY]
       return {
         x: newX,
         y: newY
@@ -174,7 +167,7 @@ function drawDrop(x, y) {
     }
   })
   drops[drop._id] = drop
-  dataRequest.drops[drop._id] = [x - pointSize / 2, y - pointSize / 2]
+  store.dispatch('addDrop', {x: x - pointSize / 2, y: y - pointSize / 2})
   layer.add(drop)
   return drop._id
 }
@@ -187,8 +180,6 @@ function drawRiser(x, y) {
   });
 
   const box = new Konva.Rect({
-    // x: pos.x - pointSize / 2,
-    // y: pos.y - pointSize / 2,
     width: gridSize*4,
     height: gridSize*4,
     fill: 'white',
@@ -196,8 +187,8 @@ function drawRiser(x, y) {
     strokeWidth: 2,
     dragBoundFunc: function(pos) {
       // Ограничиваем перемещение точек только по горизонтали и вертикали
-      var newX = Math.floor(pos.x / gridSize) * gridSize + gridSize / 2;
-      var newY = Math.floor(pos.y / gridSize) * gridSize + gridSize / 2;
+      const newX = Math.floor(pos.x / gridSize) * gridSize + gridSize / 2
+      const newY = Math.floor(pos.y / gridSize) * gridSize + gridSize / 2
       return {
         x: newX,
         y: newY
@@ -217,6 +208,8 @@ function drawRiser(x, y) {
   group.add(box)
   group.add(circle)
   layer.add(group)
+
+  store.dispatch('addRiser', {x: x, y: y})
 }
 
 function init() {
@@ -273,10 +266,6 @@ function init() {
             }
           });
 
-          point.on('dragmove', function() {
-            updateLinePoints();
-          });
-
           point.on('mousedown touchstart', function(e) {
             point.moveToTop();
             stage.batchDraw();
@@ -293,6 +282,7 @@ function init() {
         var lastIndex = linePoints.length - 1;
         linePoints[lastIndex] = pos.x;
         linePoints[lastIndex + 1] = pos.y;
+        store.dispatch('setWallPoint', pos)
         updateLinePoints();
         isDrawing = false;
       },
@@ -303,7 +293,6 @@ function init() {
           return
         }
         const pos = getGridSnappedPosition(stage.getPointerPosition());
-        dataRequest.risers.push([pos.x, pos.y])
         drawRiser(pos.x, pos.y)
       },
       mouseup: function (e) {
@@ -352,13 +341,9 @@ function init() {
       addCenter(dataRequest.center[0], dataRequest.center[1])
     }
 
-    dataRequest.risers.forEach(function (pos) {
+    store.state.activeProject.risers.forEach(function (pos) {
       drawRiser(pos[0], pos[1])
     })
-
-    for (const [dropId, pos] of Object.entries(dataRequest.drops)) {
-      layer.add(drops[dropId])
-    }
 
     const line = new Konva.Line({
       stroke: 'blue',
@@ -415,8 +400,18 @@ function init() {
 
 function calculate() {
   axios.post('/api/calc', dataRequest).then((res) => {
-    dataResponse.value = res.data
+    store.state.activeProject.response = res.data
   })
+}
+
+function showCalculation(calc) {
+  const linePoints = [777, 77, 371, 77, 371, 147, 273, 147, 273, 399, 777, 399]
+  const line = new Konva.Line({
+    stroke: 'red',
+    strokeWidth: 10,
+    points: linePoints
+  })
+  layer.add(line)
 }
 
 </script>
@@ -425,27 +420,80 @@ function calculate() {
   <div class="row">
     <div class="col-lg-9">
       <div class="row" style="padding: 5px">
-        <div class="col-lg-10">
-          <input type="button" class="btn btn-outline-secondary" id="btn-clear" value="Очистить" />
-          <input type="button" class="btn" :class="activeTool==='wall' ? 'btn-primary' : 'btn-outline-secondary'" id="btn-wall" value="Стена" />
-          <input type="button" class="btn" :class="activeTool==='riser' ? 'btn-primary' : 'btn-outline-secondary'" id="btn-riser" value="Стояк" />
-          <input type="button" class="btn" :class="activeTool==='drop' ? 'btn-primary' : 'btn-outline-secondary'" id="btn-drop" value="Сливы" />
-          <input type="button" class="btn" :class="activeTool==='center' ? 'btn-primary' : 'btn-outline-secondary'" id="btn-center" value="Центр" />
+        <div class="col-lg-9">
+          <input type="button" class="btn btn-sm btn-outline-secondary" @click="cleanCanvas" value="Очистить" />
+          <input type="button" class="btn btn-sm" :class="activeTool==='wall' ? 'btn-primary' : 'btn-outline-secondary'" id="btn-wall" value="Стена" />
+          <input type="button" class="btn btn-sm" :class="activeTool==='riser' ? 'btn-primary' : 'btn-outline-secondary'" id="btn-riser" value="Стояк" />
+          <input type="button" class="btn btn-sm" :class="activeTool==='drop' ? 'btn-primary' : 'btn-outline-secondary'" id="btn-drop" value="Сливы" />
+          <input type="button" class="btn btn-sm" :class="activeTool==='center' ? 'btn-primary' : 'btn-outline-secondary'" id="btn-center" value="Центр" />
         </div>
-        <div class="col-lg-1">
-          <input type="button" class="btn btn-danger" @click="calculate" value="Рассчитать" />
+        <div class="col-lg-3">
+          <span class="btn btn-success btn-sm btn-file">
+              Загрузить <input type="file">
+          </span>
+          <input type="button" class="btn btn-danger btn-sm" @click="calculate" value="Рассчитать" />
         </div>
       </div>
-      <div id="container" style="border: 1px solid #d3d3d3; overflow: hidden; height: 600px"></div>
+      <div id="container" style="border: 1px solid #d3d3d3; overflow: hidden; height: 500px"></div>
+      <div v-if="store.state.activeProject && store.state.activeProject.response">
+        <table class="table">
+          <tr>
+            <th>Алгоритм</th>
+            <th>Оценка</th>
+            <th></th>
+          </tr>
+          <tr v-for="calc in store.state.activeProject.response.calculation">
+            <td>{{ calc.algo.name }}</td>
+            <td>{{ calc.score }}</td>
+            <td>
+              <button type="button" class="btn btn-sm btn-outline-secondary" @click="showCalculation(calc)">Показать</button>
+            </td>
+          </tr>
+        </table>
+      </div>
+      <div class="row">
+        <div class="col-lg-12">
+          Стояки
+          <table class="table">
+            <tr>
+              <th>#</th>
+              <th>X</th>
+              <th>Y</th>
+              <th>Высота</th>
+            </tr>
+            <tr v-if="store.state.activeProject" v-for="riser in store.state.activeProject.risers">
+              <td>{{ riser.id }}</td>
+              <td>{{ riser.x }}</td>
+              <td>{{ riser.y }}</td>
+              <td><input v-model="riser.z" type="number" class="form-control form-control-sm" style="width: 100px"></td>
+            </tr>
+          </table>
+          Сливы
+          <table class="table">
+            <tr>
+              <th>#</th>
+              <th>X</th>
+              <th>Y</th>
+              <th>Высота</th>
+            </tr>
+            <tr v-if="store.state.activeProject" v-for="drop in store.state.activeProject.drops">
+              <td>{{ drop.id }}</td>
+              <td>{{ drop.x }}</td>
+              <td>{{ drop.y }}</td>
+              <td><input v-model="drop.z" type="number" class="form-control form-control-sm" style="width: 100px"></td>
+            </tr>
+          </table>
+        </div>
+      </div>
     </div>
     <div class="col-lg-3">
       <div style="margin-top: 10px">
         <h6>Request</h6>
-        <pre class="pre-json">{{ JSON.stringify(dataRequest, undefined, 2) }}</pre>
+        <pre class="pre-json">{{ JSON.stringify(store.state.activeProject, undefined, 2) }}</pre>
       </div>
       <div>
         <h6>Response</h6>
-        <pre class="pre-json">{{ JSON.stringify(dataResponse, undefined, 2) }}</pre>
+        <pre v-if="store.state.activeProject" class="pre-json">{{JSON.stringify(store.state.activeProject.response, undefined, 2) }}</pre>
       </div>
     </div>
   </div>
@@ -457,5 +505,26 @@ function calculate() {
   padding: 10px;
   height: 350px;
   font-size: 12px;
+}
+</style>
+
+<style>
+.btn-file {
+  position: relative;
+  overflow: hidden;
+}
+.btn-file input[type=file] {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 100%;
+  min-height: 100%;
+  font-size: 100px;
+  text-align: right;
+  filter: alpha(opacity=0);
+  opacity: 0;
+  outline: none;
+  cursor: inherit;
+  display: block;
 }
 </style>

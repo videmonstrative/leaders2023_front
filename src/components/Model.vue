@@ -3,6 +3,7 @@
 import Viewer3D from "./Viewer3D.vue";
 import Blueprint from "./Blueprint.vue";
 import Editor from "./Editor.vue";
+import ViewerIFC from "./ViewerIFC.vue";
 </script>
 
 <template>
